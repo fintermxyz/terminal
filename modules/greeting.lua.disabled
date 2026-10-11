@@ -1,0 +1,8 @@
+-- greeting.lua — prints a banner into the terminal on startup.
+-- Demonstrates: on("startup"), terminal.write (draws locally, not sent to shell)
+
+terminal.on("startup", function()
+  local cols = terminal.size()
+  terminal.write("\27[1;35m  terminal \27[0;90mv" .. terminal.version ..
+                 "  \27[90m— LuaJIT modules active\27[0m\r\n\r\n")
+end)

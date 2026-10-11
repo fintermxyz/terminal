@@ -1,0 +1,5 @@
+*.o
+/terminal
+/terminal.app/
+/dist/
+.DS_Store
