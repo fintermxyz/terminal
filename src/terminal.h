@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define TERMINAL_VERSION "0.1.0"
+#define TERMINAL_VERSION "0.1.1"
 
 // ---------------------------------------------------------------- cell/grid
 
@@ -95,6 +95,7 @@ struct Term {
     ParserState state;
     int  params[16];
     int  nparams;
+    uint16_t sub_mask; // bit i: params[i] followed a ':' (SGR sub-parameter)
     bool csi_priv;
     char osc_buf[1024];
     int  osc_len;

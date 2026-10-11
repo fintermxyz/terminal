@@ -397,15 +397,31 @@ static bool global_shortcut(int key, int mods) {
 
 // ---------------------------------------------------------------- file links
 
-// links live on the shell's main screen; full-screen apps (vim, less, htop)
-// keep their keys and clicks
+// links show everywhere, including inside programs like Claude Code or vim;
+// those keep their own keys and clicks (see link_key / mouse_btn_cb)
 static bool links_live(void) {
-    return app.term && !app.term->alt_active && !viewer_active(app.viewer);
+    return app.term && !viewer_active(app.viewer);
 }
 
+// the process in the foreground of the active shell: the shell itself at a
+// prompt, otherwise the program it is running
+static pid_t foreground_pid(void) {
+    pid_t pg = tcgetpgrp(app.pty->fd);
+    return pg > 0 ? pg : app.pty->pid;
+}
+
+static bool at_shell_prompt(void) {
+    return !app.term->alt_active && foreground_pid() == app.pty->pid;
+}
+
+// paths resolve against the running program's directory (Claude Code prints
+// paths relative to its project), falling back to the shell's
 static int links_refresh(void) {
     if (!links_live()) { links_select(-1); return 0; }
-    return links_update(app.term, app.pty->pid);
+    struct proc_vnodepathinfo vpi;
+    pid_t pid = foreground_pid();
+    if (proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof vpi) <= 0) pid = app.pty->pid;
+    return links_update(app.term, pid);
 }
 
 // files open in the viewer / an editor tab; directories cd the shell there
@@ -418,7 +434,7 @@ static void open_link(int i) {
     links_select(-1);
     app.needs_redraw = true;
     if (!dir) { app_open_file(path); return; }
-    if (app.tabs[app.cur]->typed) return; // don't clobber a half-typed command
+    if (app.tabs[app.cur]->typed || !at_shell_prompt()) return; // only cd at an empty prompt
     char cmd[PATH_MAX * 4 + 16] = "cd '";
     size_t j = strlen(cmd);
     for (const char *p = path; *p && j < sizeof cmd - 8; p++) {
@@ -437,16 +453,19 @@ static bool is_modifier_key(int key) {
            key == GLFW_KEY_LEFT_SUPER || key == GLFW_KEY_RIGHT_SUPER;
 }
 
-// Tab on an empty command line selects the file link nearest the prompt;
-// then Tab / arrows move between links, Enter opens, Esc (or any other key)
-// lets go. Returns true when the key was used.
+// Tab on an empty shell prompt, or cmd+O anywhere (inside Claude Code, vim, …),
+// selects the file link nearest the bottom; then Tab / arrows move between
+// links, Enter opens, Esc (or any other key) lets go. Returns true when the
+// key was used.
 static bool link_key(int key, int mods) {
     int n = links_refresh();
     int sel = links_selected();
     bool shift = mods & GLFW_MOD_SHIFT;
     if (sel < 0) {
-        if (key != GLFW_KEY_TAB || (mods & ~GLFW_MOD_SHIFT) || !n || app.tabs[app.cur]->typed)
-            return false;
+        bool cmd_o = key == GLFW_KEY_O && (mods & GLFW_MOD_SUPER) && !(mods & ~GLFW_MOD_SUPER);
+        bool tab = key == GLFW_KEY_TAB && !(mods & ~GLFW_MOD_SHIFT) &&
+                   !app.tabs[app.cur]->typed && at_shell_prompt();
+        if (!n || !(cmd_o || tab)) return false;
         links_select(shift ? 0 : n - 1);
         app.needs_redraw = true;
         return true;

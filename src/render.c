@@ -36,6 +36,8 @@ struct Renderer {
 
     FT_Library ft;
     FT_Face face;
+    FT_Face fallback[4]; // tried in order for codepoints the main font lacks
+    int nfallback;
     int cell_w, cell_h, baseline;
 
     GLuint prog, vao, quad_vbo, inst_vbo, atlas_tex;
@@ -122,7 +124,28 @@ static bool load_face(Renderer *r, double pt) {
     r->cell_h = (int)(r->face->size->metrics.height >> 6);
     if (r->cell_h <= 0) r->cell_h = (int)(pt * r->scale * 1.2);
     r->baseline = (int)(r->face->size->metrics.ascender >> 6);
+    for (int i = 0; i < r->nfallback; i++)
+        FT_Set_Char_Size(r->fallback[i], 0, (FT_F26Dot6)(pt * 64.0),
+                         (FT_UInt)(72 * r->scale), (FT_UInt)(72 * r->scale));
     return true;
+}
+
+static void load_fallbacks(Renderer *r) {
+    static const char *paths[] = {
+        "/System/Library/Fonts/Apple Symbols.ttf",
+        "/System/Library/Fonts/Supplemental/STIXTwoMath.otf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    };
+    for (size_t i = 0; i < sizeof paths / sizeof *paths && r->nfallback < 4; i++)
+        if (!FT_New_Face(r->ft, paths[i], 0, &r->fallback[r->nfallback])) r->nfallback++;
+}
+
+// the face that has cp: the configured font first, then the fallbacks
+static FT_Face face_for(Renderer *r, uint32_t cp) {
+    if (FT_Get_Char_Index(r->face, cp)) return r->face;
+    for (int i = 0; i < r->nfallback; i++)
+        if (FT_Get_Char_Index(r->fallback[i], cp)) return r->fallback[i];
+    return r->face;
 }
 
 static void atlas_reset(Renderer *r) {
@@ -144,8 +167,9 @@ static Glyph *glyph_get(Renderer *r, uint32_t cp, bool bold, bool italic) {
         if (g->key == 0) {
             // rasterize
             FT_Int32 flags = FT_LOAD_RENDER | FT_LOAD_TARGET_LIGHT;
-            if (FT_Load_Char(r->face, cp, flags)) return NULL;
-            FT_GlyphSlot slot = r->face->glyph;
+            FT_Face face = face_for(r, cp);
+            if (FT_Load_Char(face, cp, flags)) return NULL;
+            FT_GlyphSlot slot = face->glyph;
             if (bold) FT_GlyphSlot_Embolden(slot);
             if (italic) FT_GlyphSlot_Oblique(slot);
             if (bold || italic) FT_Render_Glyph(slot, FT_RENDER_MODE_LIGHT);
@@ -194,6 +218,7 @@ Renderer *render_new(const Config *cfg, float content_scale) {
     r->scale = content_scale;
 
     if (FT_Init_FreeType(&r->ft)) { free(r); return NULL; }
+    load_fallbacks(r);
     if (!load_face(r, cfg->font_size)) { free(r); return NULL; }
 
     r->atlas = malloc((size_t)ATLAS_SIZE * ATLAS_SIZE);
@@ -250,6 +275,7 @@ Renderer *render_new(const Config *cfg, float content_scale) {
 void render_free(Renderer *r) {
     if (!r) return;
     if (r->face) FT_Done_Face(r->face);
+    for (int i = 0; i < r->nfallback; i++) FT_Done_Face(r->fallback[i]);
     FT_Done_FreeType(r->ft);
     free(r->atlas);
     free(r->insts);
@@ -339,6 +365,72 @@ float render_text(Renderer *r, float x, float y, const char *s, uint32_t col) {
 
 // draws one term's grid with cell (0,0) at pixel (ox,oy). the term is assumed
 // pre-sized to fit; cursor is only drawn for the focused pane.
+// ---------------------------------------------------------------- drawn glyphs
+// Block elements and box-drawing lines are drawn as rectangles snapped to the
+// cell, so they tile seamlessly (font glyphs rarely fill the full line height).
+
+static void cell_rect(Renderer *r, float x, float y, float w, float h,
+                      float fx0, float fy0, float fx1, float fy1, uint32_t col, float a) {
+    float x0 = roundf(x + w * fx0), x1 = roundf(x + w * fx1);
+    float y0 = roundf(y + h * fy0), y1 = roundf(y + h * fy1);
+    if (x1 > x0 && y1 > y0) push_rect(r, x0, y0, x1 - x0, y1 - y0, col, a);
+}
+
+static bool draw_block(Renderer *r, uint32_t cp, float x, float y, float w, float h, uint32_t col) {
+    if (cp < 0x2580 || cp > 0x259f) return false;
+    if (cp == 0x2580) cell_rect(r, x, y, w, h, 0, 0, 1, 0.5f, col, 1);
+    else if (cp <= 0x2588) cell_rect(r, x, y, w, h, 0, 1 - (cp - 0x2580) / 8.0f, 1, 1, col, 1);
+    else if (cp <= 0x258f) cell_rect(r, x, y, w, h, 0, 0, (0x2590 - cp) / 8.0f, 1, col, 1);
+    else if (cp == 0x2590) cell_rect(r, x, y, w, h, 0.5f, 0, 1, 1, col, 1);
+    else if (cp <= 0x2593) cell_rect(r, x, y, w, h, 0, 0, 1, 1, col, (cp - 0x2590) * 0.25f);
+    else if (cp == 0x2594) cell_rect(r, x, y, w, h, 0, 0, 1, 0.125f, col, 1);
+    else if (cp == 0x2595) cell_rect(r, x, y, w, h, 0.875f, 0, 1, 1, col, 1);
+    else {
+        // quadrants ▖▗▘▙▚▛▜▝▞▟ as bits: 1 upper-left, 2 upper-right, 4 lower-left, 8 lower-right
+        static const uint8_t q[] = { 4, 8, 1, 1|4|8, 1|8, 1|2|4, 1|2|8, 2, 2|4, 2|4|8 };
+        uint8_t m = q[cp - 0x2596];
+        if (m & 1) cell_rect(r, x, y, w, h, 0, 0, 0.5f, 0.5f, col, 1);
+        if (m & 2) cell_rect(r, x, y, w, h, 0.5f, 0, 1, 0.5f, col, 1);
+        if (m & 4) cell_rect(r, x, y, w, h, 0, 0.5f, 0.5f, 1, col, 1);
+        if (m & 8) cell_rect(r, x, y, w, h, 0.5f, 0.5f, 1, 1, col, 1);
+    }
+    return true;
+}
+
+// box-drawing arms: low nibble left/right/up/down, 0x10 = heavy
+enum { BL = 1, BR = 2, BU = 4, BD = 8, BH = 0x10 };
+static uint8_t box_arms(uint32_t cp) {
+    switch (cp) {
+    case 0x2500: return BL|BR;           case 0x2501: return BL|BR|BH;
+    case 0x2502: return BU|BD;           case 0x2503: return BU|BD|BH;
+    case 0x250c: case 0x256d: return BR|BD;   case 0x250f: return BR|BD|BH;
+    case 0x2510: case 0x256e: return BL|BD;   case 0x2513: return BL|BD|BH;
+    case 0x2514: case 0x2570: return BR|BU;   case 0x2517: return BR|BU|BH;
+    case 0x2518: case 0x256f: return BL|BU;   case 0x251b: return BL|BU|BH;
+    case 0x251c: return BU|BD|BR;        case 0x2523: return BU|BD|BR|BH;
+    case 0x2524: return BU|BD|BL;        case 0x252b: return BU|BD|BL|BH;
+    case 0x252c: return BL|BR|BD;        case 0x2533: return BL|BR|BD|BH;
+    case 0x2534: return BL|BR|BU;        case 0x253b: return BL|BR|BU|BH;
+    case 0x253c: return BL|BR|BU|BD;     case 0x254b: return BL|BR|BU|BD|BH;
+    case 0x2574: return BL; case 0x2575: return BU; case 0x2576: return BR; case 0x2577: return BD;
+    case 0x2578: return BL|BH; case 0x2579: return BU|BH; case 0x257a: return BR|BH; case 0x257b: return BD|BH;
+    default: return 0;
+    }
+}
+
+static bool draw_box(Renderer *r, uint32_t cp, float x, float y, float w, float h, uint32_t col) {
+    uint8_t a = box_arms(cp);
+    if (!a) return false;
+    float t = fmaxf(1.0f, roundf(r->scale)) * ((a & BH) ? 2 : 1);
+    float x0 = roundf(x), x1 = roundf(x + w), y0 = roundf(y), y1 = roundf(y + h);
+    float cx = roundf(x + (w - t) / 2), cy = roundf(y + (h - t) / 2);
+    if (a & BL) push_rect(r, x0, cy, cx + t - x0, t, col, 1);
+    if (a & BR) push_rect(r, cx, cy, x1 - cx, t, col, 1);
+    if (a & BU) push_rect(r, cx, y0, t, cy + t - y0, col, 1);
+    if (a & BD) push_rect(r, cx, cy, t, y1 - cy, col, 1);
+    return true;
+}
+
 void render_term_at(Renderer *r, Term *t, int ox, int oy, bool focused) {
     const Config *cfg = r->cfg;
     int cw = r->cell_w, ch = r->cell_h;
@@ -381,7 +473,11 @@ void render_term_at(Renderer *r, Term *t, int ox, int oy, bool focused) {
 
             float px = (float)(rx + x * cw), py = (float)(oy + y * ch);
 
-            if (c->cp > ' ') {
+            float gw = (float)cw * (c->attrs & ATTR_WIDE ? 2 : 1);
+            if (draw_block(r, c->cp, px, py, gw, (float)ch, fg) ||
+                draw_box(r, c->cp, px, py, gw, (float)ch, fg)) {
+                // drawn as rectangles
+            } else if (c->cp > ' ') {
                 Glyph *g = glyph_get(r, c->cp,
                                      (c->attrs & ATTR_BOLD) != 0,
                                      (c->attrs & ATTR_ITALIC) != 0);

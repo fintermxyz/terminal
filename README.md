@@ -45,7 +45,7 @@ brew install --cask fintermxyz/tap/terminal
 
 or grab `terminal.dmg` / `terminal.pkg` from the
 [latest release](https://github.com/fintermxyz/terminal/releases/latest).
-Requires macOS 12+ on Apple Silicon. The app isn't notarized yet: if macOS
+Requires macOS 15+ on Apple Silicon. The app isn't notarized yet: if macOS
 blocks the first launch, use System Settings → Privacy & Security → Open Anyway.
 
 ## Build
@@ -57,6 +57,10 @@ make app        # -> terminal.app (Finder integration / file handler)
 make register   # register document types (uses duti if installed)
 make package    # self-contained app -> dist/terminal.dmg + dist/terminal.pkg
 ```
+
+Releases are automatic: bump `CFBundleShortVersionString` in `assets/Info.plist`
+and push to `main`. The `release` workflow builds the DMG/PKG, publishes
+`v<version>`, and updates the Homebrew cask.
 
 ## Use
 

@@ -6,13 +6,13 @@
     <key>CFBundleName</key>              <string>terminal</string>
     <key>CFBundleDisplayName</key>       <string>terminal</string>
     <key>CFBundleIdentifier</key>        <string>xyz.finterm.terminal</string>
-    <key>CFBundleVersion</key>           <string>0.1.0</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key>           <string>0.1.1</string>
+    <key>CFBundleShortVersionString</key><string>0.1.1</string>
     <key>CFBundleExecutable</key>        <string>terminal</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleIconFile</key>          <string>terminal</string>
     <key>NSHighResolutionCapable</key>   <true/>
-    <key>LSMinimumSystemVersion</key>    <string>12.0</string>
+    <key>LSMinimumSystemVersion</key>    <string>15.0</string>
 
     <key>CFBundleDocumentTypes</key>
     <array>

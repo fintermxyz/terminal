@@ -8,7 +8,7 @@ cask "terminal" do
   homepage "https://github.com/fintermxyz/terminal"
 
   depends_on arch: :arm64
-  depends_on macos: :monterey
+  depends_on macos: :sequoia
 
   app "terminal.app"
 

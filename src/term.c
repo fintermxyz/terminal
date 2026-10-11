@@ -315,9 +315,36 @@ static void put_cp(Term *t, uint32_t cp) {
 
 static void apply_sgr(Term *t) {
     if (t->nparams == 0) { t->params[t->nparams++] = 0; }
+#define IS_SUB(k) ((k) < t->nparams && (t->sub_mask >> (k) & 1))
     for (int i = 0; i < t->nparams; i++) {
         int p = t->params[i];
+        if (IS_SUB(i)) continue; // stray sub-parameter
+        // colon forms: 4:n (underline style), 38:2:[cs]:r:g:b, 38:5:n, 58:...
+        if (IS_SUB(i + 1)) {
+            int n = 1;
+            while (IS_SUB(i + n)) n++;
+            const int *sp = &t->params[i + 1];
+            int ns = n - 1;
+            if (p == 4) {
+                if (sp[0] == 0) t->attrs &= (uint16_t)~ATTR_UNDERLINE;
+                else t->attrs |= ATTR_UNDERLINE;
+            } else if ((p == 38 || p == 48) && ns >= 2 && sp[0] == 5) {
+                int idx = sp[1] & 255;
+                if (p == 38) { t->fg = t->palette256[idx]; t->fg_idx = idx; }
+                else t->bg = t->palette256[idx];
+            } else if ((p == 38 || p == 48) && ns >= 4 && sp[0] == 2) {
+                const int *c = ns >= 5 ? sp + 2 : sp + 1; // optional colour-space id
+                uint32_t col = rgb((uint8_t)c[0], (uint8_t)c[1], (uint8_t)c[2]);
+                if (p == 38) { t->fg = col; t->fg_idx = -1; } else t->bg = col;
+            } // 58/59 (underline colour) and others: ignored
+            i += n - 1;
+            continue;
+        }
         switch (p) {
+        case 58: // underline colour (semicolon form): skip its arguments
+            if (i + 1 < t->nparams && t->params[i + 1] == 5) i += 2;
+            else if (i + 1 < t->nparams && t->params[i + 1] == 2) i += 4;
+            break;
         case 0:
             t->fg = t->cfg->fg; t->bg = t->cfg->bg;
             t->fg_idx = -1; t->attrs = 0;
@@ -358,6 +385,7 @@ static void apply_sgr(Term *t) {
             if (is_fg) t->fg = col; else t->bg = col;
             break;
         }
+        case 53: case 55: case 59: break; // overline / underline colour reset
         default:
             if (p >= 30 && p <= 37) {
                 int idx = p - 30;
@@ -530,7 +558,7 @@ static void csi_dispatch(Term *t, char final) {
         }
         break;
     }
-    case 'm': apply_sgr(t); break;
+    case 'm': if (!t->csi_priv) apply_sgr(t); break; // CSI > 4;2 m is modifyOtherKeys, not SGR
     case 'h': for (int i = 0; i < t->nparams; i++) set_mode(t, t->csi_priv, t->params[i], true); break;
     case 'l': for (int i = 0; i < t->nparams; i++) set_mode(t, t->csi_priv, t->params[i], false); break;
     case 'c': // DA
@@ -631,6 +659,7 @@ void term_feed(Term *t, const char *buf, size_t len) {
             case '[':
                 t->state = P_CSI;
                 t->nparams = 0;
+                t->sub_mask = 0;
                 memset(t->params, 0, sizeof t->params);
                 t->csi_priv = false;
                 break;
@@ -675,7 +704,10 @@ void term_feed(Term *t, const char *buf, size_t len) {
                     t->params[t->nparams - 1] = t->params[t->nparams - 1] * 10 + (b - '0');
             } else if (b == ';' || b == ':') {
                 if (t->nparams == 0) t->nparams = 1;
-                if (t->nparams < 16) t->nparams++;
+                if (t->nparams < 16) {
+                    if (b == ':') t->sub_mask |= (uint16_t)(1u << t->nparams);
+                    t->nparams++;
+                }
             } else if (b == '?') {
                 t->csi_priv = true;
             } else if (b == '<' || b == '=' || b == '>') {

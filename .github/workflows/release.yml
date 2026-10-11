@@ -1,0 +1,74 @@
+# On every push to main: if the version in assets/Info.plist has no release
+# yet, build the self-contained app, publish dist/terminal.dmg + .pkg as
+# release v<version>, and point the Homebrew cask in fintermxyz/homebrew-tap
+# at it. Bump CFBundleShortVersionString to ship a new version.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: macos-15 # Apple Silicon
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version
+        id: v
+        run: |
+          v=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' assets/Info.plist)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "v$v is already released; nothing to do"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.v.outputs.new == 'true'
+        run: |
+          brew install glfw freetype luajit
+          make package
+
+      - name: Publish release
+        if: steps.v.outputs.new == 'true'
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" dist/terminal.dmg dist/terminal.pkg \
+            --title "terminal ${{ steps.v.outputs.version }}" --generate-notes
+
+      - name: Update Homebrew cask
+        if: steps.v.outputs.new == 'true'
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$TAP_DEPLOY_KEY" ]; then
+            echo "::warning::TAP_DEPLOY_KEY secret not set; skipping the Homebrew cask update"
+            exit 0
+          fi
+          v=${{ steps.v.outputs.version }}
+          sha=$(shasum -a 256 dist/terminal.dmg | awk '{print $1}')
+          mkdir -p ~/.ssh
+          echo "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key
+          chmod 600 ~/.ssh/tap_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone git@github.com:fintermxyz/homebrew-tap.git tap
+          mkdir -p tap/Casks
+          sed -e "s/^  version \".*\"/  version \"$v\"/" \
+              -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" \
+              packaging/homebrew/Casks/terminal.rb > tap/Casks/terminal.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/terminal.rb
+          git commit -m "terminal $v"
+          git push

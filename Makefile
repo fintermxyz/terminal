@@ -1,5 +1,6 @@
 # terminal — blazing fast GPU-accelerated terminal emulator
 CC      ?= cc
+export MACOSX_DEPLOYMENT_TARGET ?= 15.0
 PKGS     = glfw3 freetype2 luajit
 
 CFLAGS  += -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter \
