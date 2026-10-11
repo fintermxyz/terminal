@@ -171,45 +171,137 @@ void term_free(Term *t) {
     free(t);
 }
 
-void term_resize(Term *t, int cols, int rows) {
-    if (cols == t->cols && rows == t->rows) return;
-    if (cols < 2) cols = 2;
-    if (rows < 2) rows = 2;
+// ---------------------------------------------------------------- reflow
 
-    Cell *nmain = calloc((size_t)cols * rows, sizeof(Cell));
-    Cell *nalt = calloc((size_t)cols * rows, sizeof(Cell));
-    Cell b = blank_cell(t);
-    for (int i = 0; i < cols * rows; i++) nmain[i] = nalt[i] = b;
+typedef struct { Cell *cells; int n, cap; } Rows; // growable list of new rows
 
-    int copy_rows = rows < t->rows ? rows : t->rows;
-    int copy_cols = cols < t->cols ? cols : t->cols;
-    // if shrinking vertically, drop rows from the top (push them to scrollback)
-    int drop = t->rows - rows;
-    if (drop < 0) drop = 0;
-    if (!t->alt_active)
-        for (int y = 0; y < drop && y <= t->cy; y++) sb_push(t, ROW(t, y));
-    int src_off = t->cy >= rows ? t->cy - rows + 1 : 0;
+static Cell *rows_add(Rows *r, int cols, Cell blank) {
+    if (r->n == r->cap) {
+        r->cap = r->cap ? r->cap * 2 : 256;
+        r->cells = realloc(r->cells, sizeof(Cell) * (size_t)r->cap * cols);
+    }
+    Cell *row = r->cells + (size_t)r->n++ * cols;
+    for (int x = 0; x < cols; x++) row[x] = blank;
+    return row;
+}
 
-    for (int y = 0; y < copy_rows; y++) {
-        int sy = y + src_off;
-        if (sy >= t->rows) break;
-        memcpy(nmain + (size_t)y * cols,
-               t->main_grid + (size_t)sy * t->cols, sizeof(Cell) * copy_cols);
-        memcpy(nalt + (size_t)y * cols,
-               t->alt_grid + (size_t)sy * t->cols, sizeof(Cell) * copy_cols);
+// Rewrap the main screen + scrollback to `cols`. Soft-wrapped rows (last cell
+// has ATTR_WRAPPED) are joined into logical lines and split again at the new
+// width. *cx/*cy is the main-screen cursor, updated in place.
+static void reflow_main(Term *t, int cols, int rows, int *cx, int *cy) {
+    int oc = t->cols;
+    Cell blank = { .cp = 0, .fg = t->cfg->fg, .bg = t->cfg->bg };
+
+    // source rows: scrollback (oldest first) then grid rows up to the
+    // cursor or the last non-blank row, whichever is lower
+    int used = *cy;
+    for (int y = t->rows - 1; y > used; y--) {
+        const Cell *r = t->main_grid + (size_t)y * oc;
+        bool blank_row = true;
+        for (int x = 0; x < oc && blank_row; x++) if (r[x].cp > ' ') blank_row = false;
+        if (!blank_row) { used = y; break; }
+    }
+    int nsrc = t->sb_len + used + 1;
+    int cur_src = t->sb_len + *cy;
+
+    Rows out = { 0 };
+    int ncx = 0, ncy = 0;
+    Cell *line = malloc(sizeof(Cell) * (size_t)oc * (nsrc > 0 ? nsrc : 1));
+    for (int s = 0; s < nsrc;) {
+        // gather one logical line
+        int len = 0, cur_off = -1;
+        for (;;) {
+            const Cell *r = s < t->sb_len ? t->sb[(t->sb_head + s) % t->sb_cap]
+                                          : t->main_grid + (size_t)(s - t->sb_len) * oc;
+            if (s == cur_src) cur_off = len + *cx;
+            memcpy(line + len, r, sizeof(Cell) * oc);
+            len += oc;
+            bool cont = (r[oc - 1].attrs & ATTR_WRAPPED) && s + 1 < nsrc;
+            line[len - 1].attrs &= (uint16_t)~ATTR_WRAPPED;
+            s++;
+            if (!cont) break;
+        }
+        while (len > 0 && line[len - 1].cp == 0) len--; // trim trailing blanks
+        if (cur_off >= len) len = cur_off + 1;          // keep the cursor's cell
+
+        // split at the new width
+        Cell *row = rows_add(&out, cols, blank);
+        int x = 0;
+        for (int i = 0; i < len; i++) {
+            bool wide = line[i].attrs & ATTR_WIDE;
+            if (x == cols || (wide && x == cols - 1)) {
+                row[cols - 1].attrs |= ATTR_WRAPPED;
+                row = rows_add(&out, cols, blank);
+                x = 0;
+            }
+            if (i == cur_off) { ncx = x; ncy = out.n - 1; }
+            row[x++] = line[i];
+        }
+    }
+    free(line);
+    if (out.n == 0) rows_add(&out, cols, blank);
+
+    // the last `rows` rows (keeping the cursor on screen) form the grid;
+    // everything above goes to scrollback
+    int top = out.n > rows ? out.n - rows : 0;
+    if (top > ncy) top = ncy;
+    for (int i = 0; i < t->sb_len; i++) free(t->sb[(t->sb_head + i) % t->sb_cap]);
+    t->sb_head = t->sb_len = 0;
+    int keep = top < t->sb_cap ? top : t->sb_cap;
+    for (int i = top - keep; i < top; i++) {
+        Cell *d = malloc(sizeof(Cell) * cols);
+        memcpy(d, out.cells + (size_t)i * cols, sizeof(Cell) * cols);
+        t->sb[t->sb_len++] = d;
     }
 
+    Cell *grid = malloc(sizeof(Cell) * (size_t)cols * rows);
+    for (int y = 0; y < rows; y++) {
+        Cell *dst = grid + (size_t)y * cols;
+        if (top + y < out.n) memcpy(dst, out.cells + (size_t)(top + y) * cols, sizeof(Cell) * cols);
+        else for (int x = 0; x < cols; x++) dst[x] = blank;
+    }
+    free(out.cells);
     free(t->main_grid);
+    t->main_grid = grid;
+    *cx = ncx;
+    *cy = ncy - top;
+}
+
+void term_resize(Term *t, int cols, int rows) {
+    if (cols < 2) cols = 2;
+    if (rows < 2) rows = 2;
+    if (cols == t->cols && rows == t->rows) return;
+
+    // alt screen: fullscreen apps redraw on SIGWINCH, so just crop/pad
+    Cell *nalt = calloc((size_t)cols * rows, sizeof(Cell));
+    Cell b = blank_cell(t);
+    for (int i = 0; i < cols * rows; i++) nalt[i] = b;
+    int copy_cols = cols < t->cols ? cols : t->cols;
+    int copy_rows = rows < t->rows ? rows : t->rows;
+    for (int y = 0; y < copy_rows; y++)
+        memcpy(nalt + (size_t)y * cols, t->alt_grid + (size_t)y * t->cols,
+               sizeof(Cell) * copy_cols);
     free(t->alt_grid);
-    t->main_grid = nmain;
     t->alt_grid = nalt;
+
+    if (t->alt_active) {
+        reflow_main(t, cols, rows, &t->saved_cx, &t->saved_cy);
+    } else {
+        int cx = t->wrap_pending ? t->cx + 1 : t->cx;
+        int cy = t->cy;
+        reflow_main(t, cols, rows, &cx, &cy);
+        t->cx = cx;
+        t->cy = cy;
+    }
+
     t->grid = t->alt_active ? t->alt_grid : t->main_grid;
     t->cols = cols;
     t->rows = rows;
-    t->cy -= src_off;
     if (t->cx >= cols) t->cx = cols - 1;
     if (t->cy >= rows) t->cy = rows - 1;
     if (t->cy < 0) t->cy = 0;
+    if (t->saved_cx >= cols) t->saved_cx = cols - 1;
+    if (t->saved_cy >= rows) t->saved_cy = rows - 1;
     t->scroll_top = 0;
     t->scroll_bot = rows - 1;
     t->view_off = 0;
@@ -267,10 +359,12 @@ static void put_cp(Term *t, uint32_t cp) {
 
     if (t->wrap_pending && t->autowrap) {
         t->wrap_pending = false;
+        ROW(t, t->cy)[t->cols - 1].attrs |= ATTR_WRAPPED;
         t->cx = 0;
         linefeed(t);
     }
     if (w == 2 && t->cx == t->cols - 1 && t->autowrap) {
+        ROW(t, t->cy)[t->cols - 1].attrs |= ATTR_WRAPPED;
         t->cx = 0;
         linefeed(t);
     }

@@ -13,6 +13,7 @@
 
 void mac_open_install(void (*cb)(const char *path)); // mac_open.m
 void mac_fullsize_content(void *glfw_window);          // mac_open.m
+void mac_hide_window_buttons(void *glfw_window);
 void mac_titlebar_buttons(void *glfw_window, float *right, float *bottom);
 void mac_defaults_menu_install(void);                  // mac_defaults.m
 
@@ -351,7 +352,8 @@ static void do_paste(void) {
     }
 }
 
-static void resize_to_font(void); // fwd
+static void zoom_to(double pt); // fwd
+static void relayout(void);     // fwd
 static bool new_tab(void);
 static void close_tab(int i);
 static void remove_tab(int i);
@@ -383,13 +385,13 @@ static bool global_shortcut(int key, int mods) {
         return true;
     case GLFW_KEY_9: select_tab(app.ntabs - 1); return true; // last tab
     case GLFW_KEY_EQUAL:
-        if (render_set_font_size(app.rend, render_font_size(app.rend) + 1)) resize_to_font();
+        zoom_to(render_font_size(app.rend) + 1);
         return true;
     case GLFW_KEY_MINUS:
-        if (render_set_font_size(app.rend, render_font_size(app.rend) - 1)) resize_to_font();
+        zoom_to(render_font_size(app.rend) - 1);
         return true;
     case GLFW_KEY_0:
-        if (render_set_font_size(app.rend, app.cfg.font_size)) resize_to_font();
+        zoom_to(app.cfg.font_size);
         return true;
     default: return false;
     }
@@ -843,15 +845,31 @@ static void fb_size_cb(GLFWwindow *w, int fbw, int fbh) {
     app.needs_redraw = true;
 }
 
-// keep grid, change window size (font size changed)
-static void resize_to_font(void) {
-    int pad = (int)(app.cfg.padding * app.scale);
-    int pxw = app.cols * render_cell_w(app.rend) + pad + update_notch(pad);
-    int pxh = app.rows * render_cell_h(app.rend) + 2 * pad + strip_h();
-    glfwSetWindowSize(app.win, (int)(pxw / app.scale), (int)(pxh / app.scale));
-    for (int i = 0; i < app.ntabs; i++)
-        if (app.tabs[i]->term) pty_resize(&app.tabs[i]->pty, app.cols, app.rows, pxw, pxh);
-    app.needs_redraw = true;
+// cmd +/-/0: keep the window, change the font, rewrap the grid to fit.
+// Bounded to ZOOM_MIN..ZOOM_MAX pt, and zooming in stops once the window
+// would hold fewer than ZOOM_MIN_COLS x ZOOM_MIN_ROWS cells.
+#define ZOOM_MIN 8.0
+#define ZOOM_MAX 48.0
+#define ZOOM_MIN_COLS 40
+#define ZOOM_MIN_ROWS 10
+
+static void zoom_to(double pt) {
+    double old = render_font_size(app.rend);
+    if (pt < ZOOM_MIN) pt = ZOOM_MIN;
+    if (pt > ZOOM_MAX) pt = ZOOM_MAX;
+    if (pt == old || !render_set_font_size(app.rend, pt)) return;
+    if (pt > old) {
+        int fbw, fbh;
+        glfwGetFramebufferSize(app.win, &fbw, &fbh);
+        int pad = (int)(app.cfg.padding * app.scale);
+        int cols = (fbw - update_notch(pad) - pad) / render_cell_w(app.rend);
+        int rows = (fbh - 2 * pad - strip_h()) / render_cell_h(app.rend);
+        if (cols < ZOOM_MIN_COLS || rows < ZOOM_MIN_ROWS) {
+            render_set_font_size(app.rend, old); // too big for this window
+            return;
+        }
+    }
+    relayout();
 }
 
 static void refresh_cb(GLFWwindow *w) {
@@ -1183,15 +1201,26 @@ int main(int argc, char **argv) {
     setlocale(LC_CTYPE, "en_US.UTF-8");
     signal(SIGPIPE, SIG_IGN);
 
-    // launched from Finder: cwd is "/"; start the shell at $HOME instead
-    char cwd[16];
-    if (getcwd(cwd, sizeof cwd) && strcmp(cwd, "/") == 0) {
-        const char *home = getenv("HOME");
-        if (home) chdir(home);
-    }
+    // CLI: `terminal <file>` — resolve before the chdir below
+    char cli_file[PATH_MAX] = "";
+    if (argc > 1 && argv[1][0] != '-' && !realpath(argv[1], cli_file))
+        snprintf(cli_file, sizeof cli_file, "%s", argv[1]);
 
     config_defaults(&app.cfg);
     app.plugins = plugins_new(&app.cfg); // runs init.lua, may mutate cfg
+
+    // first shell starts at config.working_directory (~ expanded), else $HOME
+    const char *home = getenv("HOME");
+    const char *wd = app.cfg.working_directory;
+    char wdbuf[1024];
+    if (wd[0] == '~' && home) {
+        snprintf(wdbuf, sizeof wdbuf, "%s%s", home, wd + 1);
+        wd = wdbuf;
+    }
+    if (!wd[0] || chdir(wd) != 0) {
+        if (wd[0]) fprintf(stderr, "terminal: can't cd to %s, using $HOME\n", wd);
+        if (home) chdir(home);
+    }
 
     // must be installed before glfwInit(): that's where the launch-time
     // "open documents" event is dispatched
@@ -1223,6 +1252,7 @@ int main(int argc, char **argv) {
     }
     app.win = win;
     mac_fullsize_content(win); // terminal grid extends under the title bar
+    if (app.cfg.hide_window_buttons) mac_hide_window_buttons(win);
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
 
@@ -1250,7 +1280,7 @@ int main(int argc, char **argv) {
     plugins_start(app.plugins, app.term, app.pty);
 
     // CLI: `terminal <file>` opens the viewer over the shell
-    if (argc > 1 && argv[1][0] != '-') app_open_file(argv[1]);
+    if (cli_file[0]) app_open_file(cli_file);
     for (int i = 0; i < npending; i++) {
         app_open_file(pending_open[i]);
         free(pending_open[i]);

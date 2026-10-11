@@ -105,6 +105,8 @@ terminal.config = {
   padding     = 10,
   scrollback  = 10000,
   cursor_style = "block",          -- block | bar | underline
+  working_directory = "~",         -- where the first shell starts (default: home)
+  hide_window_buttons = false,     -- true: no traffic lights, text starts flush left
   foreground  = "#c0caf5",
   background  = "#1a1b26",
   cursor_color = "#c0caf5",
@@ -114,8 +116,14 @@ terminal.config = {
     "#414868", "#f7768e", "#9ece6a", "#e0af68",
     "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
   },
+  env = {                           -- exported to every shell, optional
+    LSCOLORS = "ExGxFxdaCxDaDahbadacec",
+  },
 }
 ```
+
+`CLICOLOR=1` is set by default so macOS `ls` prints colors; `unset CLICOLOR`
+in your shell rc turns it off.
 
 ### API
 
@@ -165,6 +173,5 @@ take over images/text too). Or use Finder: Get Info → Open with → Change All
 
 - text selection + `cmd+c`
 - font fallback chain / color emoji
-- reflow on resize
 - sixel / kitty graphics protocol in the grid itself
 - more model formats (glTF, PLY) and textured meshes

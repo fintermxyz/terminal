@@ -2,6 +2,7 @@
 #include "terminal.h"
 
 #include <dirent.h>
+#include <limits.h>
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
@@ -14,6 +15,7 @@ struct Plugins {
     Term *term;
     Pty *pty;
     char reply_buf[8192]; // storage for input-filter replacement strings
+    char dev_modules[1024]; // absolute path of ./modules at launch, "" if none
 };
 
 static Plugins *self(lua_State *L) {
@@ -132,6 +134,12 @@ static void cfg_get_int(lua_State *L, const char *key, int *dst) {
     *dst = (int)d;
 }
 
+static void cfg_get_bool(lua_State *L, const char *key, bool *dst) {
+    lua_getfield(L, -1, key);
+    if (lua_isboolean(L, -1)) *dst = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+}
+
 static void cfg_get_color(lua_State *L, const char *key, uint32_t *dst) {
     lua_getfield(L, -1, key);
     if (lua_isstring(L, -1)) *dst = parse_color(lua_tostring(L, -1), *dst);
@@ -152,6 +160,8 @@ static void read_config_table(Plugins *p) {
         cfg_get_int(L, "scrollback", &c->scrollback);
         cfg_get_str(L, "shell", c->shell, sizeof c->shell);
         cfg_get_str(L, "cursor_style", c->cursor_style, sizeof c->cursor_style);
+        cfg_get_str(L, "working_directory", c->working_directory, sizeof c->working_directory);
+        cfg_get_bool(L, "hide_window_buttons", &c->hide_window_buttons);
         cfg_get_color(L, "foreground", &c->fg);
         cfg_get_color(L, "background", &c->bg);
         cfg_get_color(L, "cursor_color", &c->cursor_color);
@@ -161,6 +171,17 @@ static void read_config_table(Plugins *p) {
                 lua_rawgeti(L, -1, i + 1);
                 if (lua_isstring(L, -1))
                     c->palette[i] = parse_color(lua_tostring(L, -1), c->palette[i]);
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+        // env = { NAME = "value" } — exported to every shell this app spawns
+        lua_getfield(L, -1, "env");
+        if (lua_istable(L, -1)) {
+            lua_pushnil(L);
+            while (lua_next(L, -2)) {
+                if (lua_type(L, -2) == LUA_TSTRING && lua_isstring(L, -1))
+                    setenv(lua_tostring(L, -2), lua_tostring(L, -1), 1);
                 lua_pop(L, 1);
             }
         }
@@ -237,6 +258,10 @@ Plugins *plugins_new(Config *cfg) {
     lua_newtable(L);
     lua_setfield(L, LUA_REGISTRYINDEX, "terminal_binds");
 
+    // resolve now: main() changes directory before plugins_start runs
+    char dev[PATH_MAX];
+    if (realpath("modules", dev)) snprintf(p->dev_modules, sizeof p->dev_modules, "%s", dev);
+
     // build the `terminal` global
     lua_newtable(L);
     static const luaL_Reg api[] = {
@@ -285,7 +310,7 @@ void plugins_start(Plugins *p, Term *t, Pty *pty) {
     char dir[1024];
     config_dir(dir, sizeof dir, "/modules");
     load_dir(p->L, dir);
-    load_dir(p->L, "modules"); // repo-local modules for development
+    if (p->dev_modules[0]) load_dir(p->L, p->dev_modules); // repo-local modules for development
 
     lua_State *L = p->L;
     int n = handlers_for(L, "startup");

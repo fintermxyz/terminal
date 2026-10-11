@@ -29,6 +29,7 @@ bool pty_spawn(Pty *p, const char *shell, int cols, int rows) {
         setenv("COLORTERM", "truecolor", 1);
         setenv("TERM_PROGRAM", "terminal", 1);
         setenv("TERM_PROGRAM_VERSION", TERMINAL_VERSION, 1);
+        setenv("CLICOLOR", "1", 0); // BSD ls/macOS tools: color unless the user opted out
         unsetenv("LINES");
         unsetenv("COLUMNS");
 

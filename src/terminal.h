@@ -20,6 +20,7 @@ enum {
     ATTR_STRIKE    = 1 << 5,
     ATTR_WIDE      = 1 << 6, // first cell of a double-width glyph
     ATTR_WIDEDUMMY = 1 << 7, // second cell of a double-width glyph
+    ATTR_WRAPPED   = 1 << 8, // on a row's last cell: line continues on the next row
 };
 
 typedef struct {
@@ -40,6 +41,8 @@ typedef struct {
     int      scrollback;
     char     shell[256];
     char     cursor_style[16]; // "block" | "bar" | "underline"
+    char     working_directory[512]; // first shell starts here; "" = $HOME
+    bool     hide_window_buttons;    // hide the traffic lights, text starts flush
     uint32_t fg, bg, cursor_color;
     uint32_t palette[16];
 } Config;

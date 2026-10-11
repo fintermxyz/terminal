@@ -60,6 +60,15 @@ void mac_fullsize_content(void *glfw_window) {
         }];
 }
 
+// hide the close/minimize/zoom buttons (window still drags from the top edge,
+// cmd+w / cmd+m still work)
+void mac_hide_window_buttons(void *glfw_window) {
+    NSWindow *win = glfwGetCocoaWindow((GLFWwindow *)glfw_window);
+    if (!win) return;
+    for (NSWindowButton b = NSWindowCloseButton; b <= NSWindowZoomButton; b++)
+        [win standardWindowButton:b].hidden = YES;
+}
+
 // Where the traffic lights end, in points from the window's top-left corner:
 // right edge of the zoom button and bottom of the cluster. Zero when they're
 // not over the content (fullscreen).
