@@ -1,0 +1,16 @@
+---
+import { BUNDLE_ID, REPO, VERSION } from '../site';
+---
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <div class="brand brand--foot">
+      <img src="/icon.png" alt="" width="24" height="24" loading="lazy" />
+      <span>terminal <span class="muted">{VERSION}</span></span>
+    </div>
+    <p class="muted">
+      Made by <a href="https://finterm.xyz">finterm.xyz</a> ·
+      <a href={REPO}>GitHub</a> ·
+      <code>{BUNDLE_ID}</code>
+    </p>
+  </div>
+</footer>

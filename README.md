@@ -1,5 +1,7 @@
 # terminal
 
+**Website:** https://terminal-site.virtuline.workers.dev
+
 A blazing fast, GPU-accelerated terminal emulator for macOS, written in C,
 inspired by [Ghostty](https://ghostty.org): a native, zero-compromise core with
 a high-level extension layer. Modules are written in **Lua** and executed by

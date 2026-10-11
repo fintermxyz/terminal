@@ -1,0 +1,9 @@
+{
+  // Static assets only: no Worker script. `npm run deploy` builds to ./dist first.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "terminal-site",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist"
+  }
+}

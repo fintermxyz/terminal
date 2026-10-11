@@ -1,0 +1,16 @@
+---
+// A shell command with a copy button. The click handler is a single tiny
+// inline script in index.astro (event delegation), so this ships no JS itself.
+interface Props {
+  command: string;
+  label: string;
+  small?: boolean;
+}
+const { command, label, small = false } = Astro.props;
+---
+<div class:list={['cmd', { 'cmd--sm': small }]} role="group" aria-label={label}>
+  <code><span class="cmd__prompt" aria-hidden="true">$</span> {command}</code>
+  <button class="copy" type="button" data-copy={command}>
+    <span class="copy__label" aria-live="polite">Copy</span>
+  </button>
+</div>

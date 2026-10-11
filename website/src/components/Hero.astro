@@ -1,0 +1,36 @@
+---
+import CopyCommand from './CopyCommand.astro';
+import TerminalDemo from './TerminalDemo.astro';
+import { BREW, DMG, REPO, VERSION } from '../site';
+---
+<section class="hero" id="top">
+  <div class="wrap hero__grid">
+    <div class="hero__copy">
+      <img
+        class="hero__logo"
+        src="/icon.png"
+        width="96"
+        height="96"
+        alt="terminal logo: a single backtick on a dark rounded square"
+      />
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span> v{VERSION} · macOS 12+ · Apple Silicon</p>
+      <h1>A terminal that <span class="hl">opens your files</span>.</h1>
+      <p class="lede">
+        A GPU-accelerated terminal emulator for macOS, written in C and extended in LuaJIT. One draw call
+        per frame, zero CPU when idle — and every file name it prints is a link to an image viewer, a 3D
+        viewer, a code editor or a music player.
+      </p>
+
+      <CopyCommand command={BREW} label="Install with Homebrew" />
+
+      <div class="hero__actions">
+        <a class="btn btn--primary" href={DMG}>Download .dmg</a>
+        <a class="btn btn--ghost" href={REPO}>View source</a>
+      </div>
+    </div>
+
+    <div class="hero__demo">
+      <TerminalDemo />
+    </div>
+  </div>
+</section>

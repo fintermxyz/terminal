@@ -1,0 +1,30 @@
+---
+import CopyCommand from './CopyCommand.astro';
+import { BREW, DMG, REPO, SOURCE_BUILD } from '../site';
+---
+<section class="section section--alt" id="install" aria-labelledby="install-title">
+  <div class="wrap">
+    <p class="kicker">// install</p>
+    <h2 id="install-title">Get terminal.</h2>
+    <p class="section__lede">Requires macOS 12 or later on Apple Silicon.</p>
+
+    <div class="grid grid--3 install">
+      <div class="card install__card">
+        <h3>Homebrew</h3>
+        <p>The easiest way to install and keep it updated.</p>
+        <CopyCommand command={BREW} label="Homebrew command" small />
+      </div>
+      <div class="card install__card">
+        <h3>Direct download</h3>
+        <p>The latest release as a disk image. Drag terminal.app to Applications.</p>
+        <a class="btn btn--primary btn--block" href={DMG}>Download terminal.dmg</a>
+      </div>
+      <div class="card install__card">
+        <h3>From source</h3>
+        <p>Needs <code>glfw</code>, <code>freetype</code> and <code>luajit</code> from Homebrew.</p>
+        <CopyCommand command={SOURCE_BUILD} label="Build from source commands" small />
+        <a class="link" href={REPO}>github.com/fintermxyz/terminal →</a>
+      </div>
+    </div>
+  </div>
+</section>

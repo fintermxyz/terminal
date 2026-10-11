@@ -1,0 +1,54 @@
+---
+// Animated fake terminal window. Pure CSS (see .demo-* keyframes in
+// global.css): type `ls`, file names print as links, Tab selects the nearest
+// one, arrows move to photo.png, Enter opens it in a viewer tab, Esc returns.
+// Without motion (prefers-reduced-motion) it shows a static, complete frame.
+const files = [
+  { name: 'assets/', kind: 'dir' },
+  { name: 'build.sh' },
+  { name: 'init.lua' },
+  { name: 'model.stl' },
+  { name: 'notes.md' },
+  { name: 'photo.png', kind: 'img' },
+  { name: 'song.flac' },
+  { name: 'teapot.obj' },
+];
+---
+<figure
+  class="win"
+  role="img"
+  aria-label="Demo: running ls in terminal prints file names as underlined links; pressing Tab selects the nearest one, arrows move the selection, and Enter opens photo.png in a viewer tab."
+>
+  <div class="win__bar" aria-hidden="true">
+    <span class="win__lights"><i></i><i></i><i></i></span>
+    <div class="win__tabs">
+      <span class="win__tab win__tab--shell">zsh — ~/demo</span>
+      <span class="win__tab win__tab--view">photo.png</span>
+    </div>
+  </div>
+  <div class="win__body" aria-hidden="true">
+    <div class="pane pane--shell">
+      <div class="line">
+        <span class="p-dir">~/demo</span> <span class="p-sym">❯</span> <span class="typed">ls</span><span class="cursor cursor--1"></span>
+      </div>
+      <div class="ls">
+        {files.map((f, i) => (
+          <span class:list={['f', `f--${i}`, { 'f--dir': f.kind === 'dir', 'f--img': f.kind === 'img' }]}>{f.name}</span>
+        ))}
+      </div>
+      <div class="line line--2">
+        <span class="p-dir">~/demo</span> <span class="p-sym">❯</span> <span class="cursor"></span>
+      </div>
+      <div class="hint">tab · select &nbsp; ←→ · move &nbsp; ⏎ · open</div>
+    </div>
+    <div class="pane pane--view">
+      <div class="photo">
+        <div class="photo__sky"></div>
+        <div class="photo__sun"></div>
+        <div class="photo__hill photo__hill--back"></div>
+        <div class="photo__hill photo__hill--front"></div>
+      </div>
+      <div class="view__meta">photo.png · drag to pan · wheel to zoom · esc to return</div>
+    </div>
+  </div>
+</figure>

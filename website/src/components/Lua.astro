@@ -1,0 +1,47 @@
+---
+const api = ['on', 'bind', 'send', 'write', 'view', 'set_title', 'size', 'log'];
+const events = ['startup', 'output', 'input', 'key', 'title', 'resize', 'bell'];
+---
+<section class="section" id="lua" aria-labelledby="lua-title">
+  <div class="wrap lua">
+    <div class="lua__copy">
+      <p class="kicker">// LuaJIT modules</p>
+      <h2 id="lua-title">Extend it in a few lines of Lua.</h2>
+      <p class="section__lede">
+        Config lives in <code>~/.config/terminal/init.lua</code>; drop modules into
+        <code>~/.config/terminal/modules/*.lua</code>. They load at startup and run JIT-compiled.
+      </p>
+
+      <h3 class="mini">API</h3>
+      <ul class="chips" aria-label="API functions">
+        {api.map((fn) => <li><code>terminal.{fn}</code></li>)}
+      </ul>
+      <h3 class="mini">Events</h3>
+      <ul class="chips chips--ev" aria-label="Events">
+        {events.map((ev) => <li><code>{ev}</code></li>)}
+      </ul>
+    </div>
+
+    <figure class="code">
+      <figcaption class="code__bar">
+        <span class="win__lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>~/.config/terminal/modules/demo.lua</span>
+      </figcaption>
+<pre tabindex="0" aria-label="Example Lua module" is:raw><code><span class="t-cm">-- show the grid size in the title</span>
+terminal.<span class="t-fn">on</span>(<span class="t-st">"resize"</span>, <span class="t-kw">function</span>(cols, rows)
+  terminal.<span class="t-fn">set_title</span>((<span class="t-st">"terminal — %dx%d"</span>):<span class="t-fn">format</span>(cols, rows))
+<span class="t-kw">end</span>)
+
+<span class="t-cm">-- a keybinding that types into the shell</span>
+terminal.<span class="t-fn">bind</span>(<span class="t-st">"cmd+shift+g"</span>, <span class="t-kw">function</span>()
+  terminal.<span class="t-fn">send</span>(<span class="t-st">"git status\n"</span>)
+<span class="t-kw">end</span>)
+
+<span class="t-cm">-- auto-open any image path the shell prints</span>
+terminal.<span class="t-fn">on</span>(<span class="t-st">"output"</span>, <span class="t-kw">function</span>(chunk)
+  <span class="t-kw">local</span> p = chunk:<span class="t-fn">match</span>(<span class="t-st">"VIEW:([%w%p]+%.png)"</span>)
+  <span class="t-kw">if</span> p <span class="t-kw">then</span> terminal.<span class="t-fn">view</span>(p) <span class="t-kw">end</span>
+<span class="t-kw">end</span>)</code></pre>
+    </figure>
+  </div>
+</section>

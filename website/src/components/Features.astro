@@ -1,0 +1,58 @@
+<section class="section" id="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <p class="kicker">// fast by construction</p>
+    <h2 id="features-title">Native core. Nothing in the way.</h2>
+    <p class="section__lede">
+      Written in C, inspired by <a href="https://ghostty.org">Ghostty</a>: a zero-compromise core with a
+      high-level extension layer on top.
+    </p>
+
+    <ul class="grid grid--3 features">
+      <li class="card">
+        <span class="card__tag c-blue">render.c</span>
+        <h3>One draw call per frame</h3>
+        <p>
+          OpenGL 3.3. Every cell background, glyph, underline and the cursor is an instance in a single
+          <code>glDrawArraysInstanced</code> against one glyph atlas.
+        </p>
+      </li>
+      <li class="card">
+        <span class="card__tag c-green">idle</span>
+        <h3>Zero CPU when idle</h3>
+        <p>
+          Damage-driven redraw: nothing is drawn unless the grid changed, and vsync caps redraw at the
+          display’s refresh rate.
+        </p>
+      </li>
+      <li class="card">
+        <span class="card__tag c-purple">pty.c</span>
+        <h3>Dedicated PTY reader thread</h3>
+        <p>
+          Output is consumed the instant the kernel has it and the render loop is woken immediately — no
+          polling latency. Parsing runs over whole chunks, up to 1&nbsp;MB per frame.
+        </p>
+      </li>
+      <li class="card">
+        <span class="card__tag c-cyan">plugin.c</span>
+        <h3>LuaJIT modules</h3>
+        <p>
+          Config and extensions are Lua, JIT-compiled to native code. Hook events, bind keys, write to the
+          shell or the screen.
+        </p>
+      </li>
+      <li class="card">
+        <span class="card__tag c-yellow">tabs</span>
+        <h3>Tabs</h3>
+        <p>Shells, viewers, editors and players all live side by side as tabs in one window.</p>
+      </li>
+      <li class="card">
+        <span class="card__tag c-red">term.c</span>
+        <h3>The xterm you expect</h3>
+        <p>
+          256-colour and truecolor, alternate screen for vim and htop, mouse reporting, bracketed paste, and
+          live font-size resize with <kbd>⌘</kbd><kbd>=</kbd> / <kbd>⌘</kbd><kbd>-</kbd>.
+        </p>
+      </li>
+    </ul>
+  </div>
+</section>

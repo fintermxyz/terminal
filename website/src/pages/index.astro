@@ -1,0 +1,41 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import Files from '../components/Files.astro';
+import Lua from '../components/Lua.astro';
+import Install from '../components/Install.astro';
+import Footer from '../components/Footer.astro';
+---
+<Base
+  title="terminal — a GPU terminal for macOS"
+  description="terminal is a GPU-accelerated terminal emulator for macOS, written in C, extensible with LuaJIT. It opens images, 3D models, code and music itself, and turns every file name into a link."
+>
+  <Nav />
+  <main id="main">
+    <Hero />
+    <Features />
+    <Files />
+    <Lua />
+    <Install />
+  </main>
+  <Footer />
+
+  <!-- The page's only JS: copy buttons (event delegation). -->
+  <script is:inline>
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-copy]');
+      if (!b) return;
+      var l = b.querySelector('.copy__label');
+      var done = function (ok) {
+        l.textContent = ok ? 'Copied' : 'Press ⌘C';
+        b.classList.toggle('is-done', ok);
+        clearTimeout(b._t);
+        b._t = setTimeout(function () { l.textContent = 'Copy'; b.classList.remove('is-done'); }, 1800);
+      };
+      var c = navigator.clipboard;
+      c ? c.writeText(b.dataset.copy).then(function () { done(true); }, function () { done(false); }) : done(false);
+    });
+  </script>
+</Base>
